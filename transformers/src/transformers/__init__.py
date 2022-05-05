@@ -839,6 +839,7 @@ if is_torch_available():
             "CLIPPreTrainedModel",
             "CLIPTextModel",
             "CLIPVisionModel",
+            "CLIPUserModel"
         ]
     )
     _import_structure["models.convbert"].extend(
@@ -3142,6 +3143,7 @@ if TYPE_CHECKING:
             CLIPPreTrainedModel,
             CLIPTextModel,
             CLIPVisionModel,
+            CLIPUserModel
         )
         from .models.convbert import (
             CONVBERT_PRETRAINED_MODEL_ARCHIVE_LIST,

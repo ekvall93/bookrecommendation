@@ -46,6 +46,7 @@ if is_torch_available():
         "CLIPPreTrainedModel",
         "CLIPTextModel",
         "CLIPVisionModel",
+        "CLIPUserModel"
     ]
 
 if is_tf_available():
@@ -83,6 +84,7 @@ if TYPE_CHECKING:
         from .modeling_clip import (
             CLIP_PRETRAINED_MODEL_ARCHIVE_LIST,
             CLIPModel,
+            CLIPUserModel,
             CLIPPreTrainedModel,
             CLIPTextModel,
             CLIPVisionModel,

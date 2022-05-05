@@ -1891,6 +1891,18 @@ class BertForQuestionAnswering(BertPreTrainedModel):
 
 import pdb
 
+class LinearLayer(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.l = nn.Linear(768, 768) 
+        #self.d = nn.Dropout(0.2)
+        self.a = nn.ReLU()
+    
+    def forward(self, x):
+        x = self.l(x)
+        #x = self.d(x)
+        x = self.a(x)
+        return x
 
 
 @add_start_docstrings(
@@ -1900,7 +1912,7 @@ import pdb
     BERT_START_DOCSTRING,
 )
 class BertForRanking(BertPreTrainedModel):
-    def __init__(self, config, num_labels=1, num_users=278854):
+    def __init__(self, config, num_labels=2, num_users=278854):
         super().__init__(config)
         self.num_labels = num_labels
         self.config = config
@@ -1911,13 +1923,15 @@ class BertForRanking(BertPreTrainedModel):
         )
         self.dropout = nn.Dropout(classifier_dropout)
         #self.classifier = nn.Linear(config.hidden_size, self.num_labels)
-        self.classifier = nn.Linear(768 * 3, self.num_labels)
+        self.classifier = nn.Linear(1, self.num_labels)
     
 
         self.user_emb = nn.Embedding(num_users + 1, 768)
 
         self.logit_scale = nn.Parameter(torch.ones([]) * 2.6592)
         self.CosSim = torch.nn.CosineSimilarity()
+
+        self.l = LinearLayer()
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1935,12 +1949,7 @@ class BertForRanking(BertPreTrainedModel):
         self,
         input_ids_1: Optional[torch.Tensor] = None,
         attention_mask_1: Optional[torch.Tensor] = None,
-
-        input_ids_2: Optional[torch.Tensor] = None,
-        attention_mask_2: Optional[torch.Tensor] = None,
-
         token_type_ids_1: Optional[torch.Tensor] = None,
-        token_type_ids_2: Optional[torch.Tensor] = None,
 
         position_ids: Optional[torch.Tensor] = None,
         head_mask: Optional[torch.Tensor] = None,
@@ -1971,75 +1980,32 @@ class BertForRanking(BertPreTrainedModel):
             return_dict=return_dict,
         )
 
-        outputs2 = self.bert(
-            input_ids_2,
-            attention_mask=attention_mask_2,
-            token_type_ids=token_type_ids_2,
-            position_ids=position_ids,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
+        
 
         pooled_output1 = outputs1[1]
         pooled_output1 = self.dropout(pooled_output1)
 
-        pooled_output2 = outputs2[1]
-        pooled_output2 = self.dropout(pooled_output2)
-
-        user_emb = self.user_emb(user_id)
+       
+        user_emb = self.l(self.user_emb(user_id))
 
 
         pooled_output1 = pooled_output1 / pooled_output1.norm(dim=-1, keepdim=True)
-        pooled_output2 = pooled_output2 / pooled_output2.norm(dim=-1, keepdim=True)
-
+        
         user_emb = user_emb / user_emb.norm(dim=-1, keepdim=True)
 
 
-        #logit_scale = self.logit_scale.exp()
-        #logits_per_paper1 = torch.matmul(user_emb, pooled_output1.t()) * logit_scale
-        #logits_per_paper2 = torch.matmul(user_emb, pooled_output2.t()) * logit_scale
-
-        #logits_per_paper1 = torch.diagonal(logits_per_paper1)
-        #logits_per_paper2 = torch.diagonal(logits_per_paper2)
 
         logits_per_paper1 = self.CosSim(user_emb, pooled_output1)
-        logits_per_paper2 = self.CosSim(user_emb, pooled_output2)
-        print(logits_per_paper1[0])
-        print(logits_per_paper1[1])
 
-        #pdb.set_trace()
+        logits = logits_per_paper1[:,None]
 
-        """ like = torch.cat([
-            logits_per_paper1[labels.bool()], 
-            logits_per_paper2[~labels.bool()]
-        ])
-        dislike = -1 * torch.cat([
-            logits_per_paper1[~labels.bool()], 
-            logits_per_paper2[labels.bool()]
-        ]) """
+        logits = self.classifier(logits)
+        
+        #target = torch.ones(labels.shape[0]).cuda()
+        
 
-        #pdb.set_trace()
-
-        logtis = torch.cat([
-            logits_per_paper1[:,None],
-            logits_per_paper2[:,None]
-        ],1)
-
-        target_1 = torch.ones(labels.shape[0]).cuda()
-        target_2 = torch.ones(labels.shape[0]).cuda()
-
-        target_1[~labels.bool()] = -1 * target_1[~labels.bool()]
-        target_2[labels.bool()] = -1 * target_2[labels.bool()]
-        labels.bool()
-
-        target = torch.cat([
-            target_1[:,None],
-            target_2[:,None]
-        ],1)
-
+        #target[~labels.bool()] = -1 * target[~labels.bool()]
+        
         
 
         #pdb.set_trace()
@@ -2077,7 +2043,7 @@ class BertForRanking(BertPreTrainedModel):
                 loss_fct = MSELoss()
                 if self.num_labels == 1:
                     #print("In")
-                    loss = loss_fct(logtis.ravel().squeeze(), target.ravel().squeeze())
+                    loss = loss_fct(logits.ravel().squeeze(), target.ravel().squeeze())
                 else:
                     loss = loss_fct(logits, labels)
             elif self.config.problem_type == "single_label_classification":
@@ -2092,12 +2058,12 @@ class BertForRanking(BertPreTrainedModel):
 
         #ipdb.set_trace()
 
-        print(logtis[:3])
+        #print(logits[:3])
 
         #TODO: add outputs2
         return SequenceClassifierOutput(
             loss=loss,
-            logits=logtis,
+            logits=logits,
             hidden_states=outputs1.hidden_states,
             attentions=outputs1.attentions,
         )
